@@ -1,15 +1,20 @@
-# Comprehensive Field Calibration & Inspection System
+# FORECOURT WORKS — Flow Meter Calibration App
 
-An enterprise-ready field verification and equipment calibration application designed for technical service contractors, station auditors, and industrial metrology inspectors.
+Dedicated app extracted from the FDU Inspection Checklist **meter accuracy** module.
 
-## Complete Inspection Module Structure
-1. **Part 1: General Information & Asset Identification** (Client, Certificate Number, Make, Model, Fuel/Product Line, Serial Numbers, and Location).
-2. **Part 2: Calibration Data & Accuracy Verification** (Dynamic measurement runs, text/numeric handling, automatic formatting to 2 decimal places, percentage error calculations, and mean average tallying).
-3. **Part 3: Environmental Conditions & Pre-Test Checks** (Ambient temperature, product temperature, fuel density, and visual hardware integrity checks).
-4. **Part 4: Traceability & Seal Register** (Reference prover tank certificate numbers, old seal tracking, and new security seal logging).
-5. **Part 5: Compliance Verdict & Authorization** (Pass/Fail status selector, inspector field notes, and digital sign-off fields for lead engineers and client site managers).
+## Features
+- Document & equipment metadata (inspection no., client, site, serial, asset ID, hose config, county)
+- Calibration stage: **New verification** (0% to +0.25%) or **In-service re-verification** (−0.25% to +0.50%)
+- Live variance, relative errors, PASS/FAIL verdict (same engine as full checklist)
+- Photos optional
+- Compact tester + client signatures (draw or attach file)
 
-## Page Boundary Control & PDF Layout
-* **Strict A4 Geometry:** Formatted for standard A4 boundaries (`210mm x 297mm`).
-* **Controlled Page Breaks:** Ensures heavy measurement runs do not cause table clipping or orphan text at page bottoms.
-* **Auto-Pagination:** Includes auto-calculated dynamic headers and page footers (`Page X of Y`) with verification timestamps.
+## PDF rules
+- Double navy page boundary + embedded FORECOURT-SWL mark
+- Footer (inside frame): document number + client name + page X of Y
+- **No photos → 1 page maximum**
+- **1–4 photos → page 2** with 4 portrait quadrants
+- **5–8 photos → page 3** with next 4 quadrants
+- Photos fitted/resized into portrait containers
+
+Open `index.html` from this folder.
