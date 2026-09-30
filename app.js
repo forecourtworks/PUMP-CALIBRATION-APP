@@ -227,7 +227,7 @@
         <div><b>Rel. error vs true:</b> ${relT}${calc.relVsTrue.toFixed(2)}%</div>
         <div><b>Rel. indication error:</b> ${relI}${calc.relVsInd.toFixed(2)}%</div>
       </div>
-      <div class="formula-note">Variance = Indicated − True Proven &nbsp;|&nbsp; Limit: ${calc.limitText}</div>
+      <div class="formula-note">Variance = Indicated - True Proven &nbsp;|&nbsp; Limit: ${calc.limitText}</div>
       <div style="margin-top:6px;padding:8px;background:#f8fafc;border-radius:6px;border-left:3px solid ${colour};">
         <b>Interpretation:</b> ${calc.narrative}
       </div>
@@ -386,8 +386,7 @@
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageW = 210, pageH = 297;
-    const outer = 8;
-    const m = 13;              // content margin
+    const outer = 8, m = 13;
     const usable = pageW - m * 2;
     const navy = [13, 71, 140];
     const dark = [15, 23, 42];
@@ -396,23 +395,39 @@
     const red = [185, 28, 28];
     const amber = [180, 83, 9];
     const soft = [241, 245, 249];
-    const footerH = 10;
-    const bottomLimit = pageH - outer - footerH; // last usable Y for content
+    const footerH = 4; // no text footer; small pad inside boundary only
+    const bottomLimit = pageH - outer - footerH;
+    const DOC = DOC_CTRL;
 
-    // ——— Fixed page-1 budget (mm from top of content area) ———
-    // Total usable height ≈ 297 - 16 - 10 = 271
-    const ZONE = {
-      header: 18,
-      title: 16,
-      metaBar: 6.5,
-      meta: 48,        // 6 rows x 2 cols of compact tiles
-      tableBar: 6.5,
-      table: null,     // computed from n readings
-      interpBar: 6.5,
-      interp: null,    // fills remaining before sign-off
-      signBar: 6.5,
-      sign: 32
-    };
+    async function loadPdfFonts() {
+      async function loadOne(file, name, style) {
+        try {
+          const res = await fetch(file);
+          if (!res.ok) return false;
+          const buf = await res.arrayBuffer();
+          let binary = '';
+          const bytes = new Uint8Array(buf);
+          const chunk = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunk) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+          }
+          doc.addFileToVFS(file, btoa(binary));
+          doc.addFont(file, name, style);
+          return true;
+        } catch (_) { return false; }
+      }
+      const okR = await loadOne('Roboto-Regular.ttf', 'Roboto', 'normal');
+      const okB = await loadOne('Roboto-Bold.ttf', 'Roboto', 'bold');
+      return okR && okB;
+    }
+    const hasRoboto = await loadPdfFonts();
+    function F(style, size) {
+      if (hasRoboto && style !== 'italic') doc.setFont('Roboto', style === 'bold' ? 'bold' : 'normal');
+      else if (style === 'bold') doc.setFont('helvetica', 'bold');
+      else if (style === 'italic') doc.setFont('helvetica', 'italic');
+      else doc.setFont('helvetica', 'normal');
+      if (size) doc.setFontSize(size);
+    }
 
     function drawFrame() {
       doc.setDrawColor(...navy);
@@ -420,372 +435,228 @@
       doc.rect(outer, outer, pageW - outer * 2, pageH - outer * 2);
       doc.setLineWidth(0.22);
       doc.rect(outer + 1.2, outer + 1.2, pageW - (outer + 1.2) * 2, pageH - (outer + 1.2) * 2);
-      try {
-        doc.addImage(EMBEDDED_LOGO_MARK_PNG, 'PNG', pageW - m - 38, outer + 2.8, 36, 6.2);
-      } catch (_) {}
+      try { doc.addImage(EMBEDDED_LOGO_MARK_PNG, 'PNG', pageW - m - 38, outer + 2.8, 36, 6.2); } catch (_) {}
     }
-
     function drawFooter(pageNo, total) {
-      const fy = pageH - outer - 2.8;
-      doc.setDrawColor(...navy);
-      doc.setLineWidth(0.2);
-      doc.line(m, fy - 3.8, pageW - m, fy - 3.8);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(...grey);
-      doc.text(
-        'Doc: ' + (($('#doc-number').value || '—').slice(0, 24)) +
-        '   ·   Client: ' + (($('#client-name').value || '—').slice(0, 36)),
-        m, fy - 0.5
-      );
-      doc.text('Page ' + pageNo + ' of ' + total, pageW - m, fy - 0.5, { align: 'right' });
-      doc.setFontSize(6);
-      doc.text(DOC_CTRL + '  ·  FORECOURT WORKS LIMITED', m, fy + 2.2);
+      // Footer removed per product requirement (clashed with boundary; no operational value)
     }
-
     function bar(y, label) {
       doc.setFillColor(...navy);
-      doc.rect(m, y, usable, ZONE.metaBar, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
+      doc.rect(m, y, usable, 6.5, 'F');
+      F('bold', 8.5);
       doc.setTextColor(255, 255, 255);
-      doc.text(label, m + 2.5, y + 4.5);
-      return y + ZONE.metaBar;
+      doc.text(label, m + 2.5, y + 4.4);
+      return y + 6.5;
     }
-
     function calcOf(r) {
-      try {
-        return calcMeterError(parseFloat(r.indicated), parseFloat(r.actual), r.capacity, state.stage);
-      } catch (e) {
-        return {
-          status: 'ERROR', pass: false, varianceL: 0, relVsInd: 0, relVsTrue: 0,
-          regType: '—', limitText: '—', narrative: String(e.message || e), verdict: ''
-        };
+      try { return calcMeterError(parseFloat(r.indicated), parseFloat(r.actual), r.capacity, state.stage); }
+      catch (e) {
+        return { status: 'ERROR', pass: false, varianceL: 0, relVsInd: 0, relVsTrue: 0, regType: '-', limitText: '-', narrative: String(e.message || e) };
       }
     }
 
-    // Pre-compute table + interpretation heights so everything fits on page 1
-    const n = valid.length;
-    const tableRowH = n <= 2 ? 9 : n <= 4 ? 7.5 : 6.5;
-    ZONE.table = 7.5 + n * tableRowH; // header + rows
-
-    // Remaining for interpretation cards
-    const usedFixed =
-      (outer + 4) + ZONE.header + ZONE.title +
-      ZONE.metaBar + 2 + ZONE.meta + 2 +
-      ZONE.tableBar + 1.5 + ZONE.table + 2 +
-      ZONE.interpBar + 1.5 +
-      ZONE.signBar + 1.5 + ZONE.sign;
-    // interp height = whatever is left before bottomLimit
-    // Start Y after table is computed dynamically; here we allocate max interp
-    const startY = outer + 4;
-    const yAfterTableApprox = startY + ZONE.header + ZONE.title + ZONE.metaBar + 2 + ZONE.meta + 2 + ZONE.tableBar + 1.5 + ZONE.table + 2 + ZONE.interpBar + 1.5;
-    const ySignStart = bottomLimit - ZONE.signBar - 1.5 - ZONE.sign;
-    ZONE.interp = Math.max(36, ySignStart - yAfterTableApprox);
-
     drawFrame();
-    let y = startY;
+    let y = outer + 4;
 
-    // ===== HEADER =====
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(...navy);
+    // Header
+    F('bold', 12); doc.setTextColor(...navy);
     doc.text('FORECOURT WORKS LIMITED', m, y + 3);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(...dark);
-    doc.text('Ramco Court, GT 3B, South C, Nairobi  ·  +254 729-002-087  ·  sales@forecourtworks.co.ke', m, y + 7.2);
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(8);
-    doc.setTextColor(...amber);
+    F('normal', 7); doc.setTextColor(...dark);
+    doc.text('Ramco Court, GT 3B, South C, Nairobi  |  +254 729-002-087  |  sales@forecourtworks.co.ke', m, y + 7.2);
+    F('italic', 8); doc.setTextColor(...amber);
     doc.text('Engineering Reliability Into Every Forecourt', m, y + 11.2);
-    y += ZONE.header;
-
-    doc.setDrawColor(...navy);
-    doc.setLineWidth(0.4);
+    y += 15;
+    doc.setDrawColor(...navy); doc.setLineWidth(0.4);
     doc.line(m, y, pageW - m, y);
-    y += 4;
+    y += 5;
 
-    // ===== TITLE =====
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.setTextColor(...navy);
-    doc.text('FLOW METER CALIBRATION RECORD', pageW / 2, y + 3, { align: 'center' });
-    y += 6;
+    // Title + stage (ASCII only)
+    F('bold', 14); doc.setTextColor(...navy);
+    doc.text('FLOW METER CALIBRATION RECORD', pageW / 2, y, { align: 'center' });
+    y += 5;
     const stageText = state.stage === 'new'
-      ? 'Stage: New / never used   ·   Verification limits  0%  →  +0.25%'
-      : 'Stage: In-service   ·   Re-verification limits  −0.25%  →  +0.50%';
+      ? 'CALIBRATION TYPE: NEW / NEVER USED  |  Verification limits: 0% to +0.25%'
+      : 'CALIBRATION TYPE: IN-SERVICE  |  Re-verification limits: -0.25% to +0.50%';
     doc.setFillColor(...soft);
-    doc.roundedRect(m, y, usable, 7, 1.2, 1.2, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(...navy);
-    doc.text(stageText, pageW / 2, y + 4.6, { align: 'center' });
-    y += 10;
+    doc.roundedRect(m, y, usable, 8, 1.2, 1.2, 'F');
+    F('bold', 9); doc.setTextColor(...navy);
+    doc.text(stageText, pageW / 2, y + 5.3, { align: 'center' });
+    y += 11;
 
-    // ===== 1. META — 3 columns x 4 rows (compact, full width) =====
+    // Meta 3x4
     y = bar(y, '1.  DOCUMENT & EQUIPMENT');
     y += 2;
-
     const meta = [
       ['CALIBRATION NO.', $('#doc-number').value],
       ['DATE', formatDateDDMonYYYY($('#doc-date').value)],
-      ['WORK ORDER', $('#linked-wo').value || '—'],
+      ['WORK ORDER', $('#linked-wo').value || '-'],
       ['CLIENT', $('#client-name').value],
       ['SITE', $('#site-name').value],
-      ['ASSET ID', $('#lift-id').value || '—'],
+      ['ASSET ID', $('#lift-id').value || '-'],
       ['SERIAL NO.', $('#equipment-serial').value],
       ['EQUIPMENT TYPE', $('#equip-type').value],
-      ['BRAND / MODEL', (($('#equipment-brand').value || '—') + ' / ' + ($('#equipment-model').value || '—'))],
-      ['HOSE CONFIG', $('#hose-config').value || '—'],
-      ['COUNTY (W&M)', $('#county-name').value || '—'],
-      ['SITE REPRESENTATIVE', $('#site-rep').value || '—']
+      ['BRAND / MODEL', (($('#equipment-brand').value || '-') + ' / ' + ($('#equipment-model').value || '-'))],
+      ['HOSE CONFIG', $('#hose-config').value || '-'],
+      ['COUNTY (W&M)', $('#county-name').value || '-'],
+      ['SITE REPRESENTATIVE', $('#site-rep').value || '-']
     ];
-    const mCols = 3;
-    const mGap = 2;
-    const mCellW = (usable - mGap * (mCols - 1)) / mCols;
-    const mCellH = 11;
+    const mCols = 3, mGap = 2, mCellW = (usable - mGap * 2) / 3, mCellH = 11;
     meta.forEach((pair, i) => {
-      const col = i % mCols;
-      const row = Math.floor(i / mCols);
+      const col = i % mCols, row = Math.floor(i / mCols);
       const x = m + col * (mCellW + mGap);
       const yy = y + row * (mCellH + mGap);
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);
       doc.setLineWidth(0.25);
       doc.roundedRect(x, yy, mCellW, mCellH, 1, 1, 'FD');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(5.8);
-      doc.setTextColor(...navy);
+      F('bold', 5.8); doc.setTextColor(...navy);
       doc.text(pair[0], x + 2, yy + 3.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(...dark);
-      const vLines = doc.splitTextToSize(String(pair[1] || '—'), mCellW - 4);
-      doc.text(vLines[0], x + 2, yy + 8);
+      F('bold', 8); doc.setTextColor(...dark);
+      doc.text(doc.splitTextToSize(String(pair[1] || '-'), mCellW - 4)[0], x + 2, yy + 8);
     });
-    y += 4 * (mCellH + mGap) + 1;
+    y += 4 * (mCellH + mGap) + 2;
 
-    // ===== 2. READINGS TABLE =====
+    // Readings table
     y = bar(y, '2.  METER READINGS');
     y += 1.5;
-
     const headers = ['#', 'Nozzle / Hose', 'Prover', 'Indicated', 'True', 'Variance', 'Status'];
     const weights = [8, 34, 20, 26, 24, 26, 24];
     const sumW = weights.reduce((a, b) => a + b, 0);
     const colW = weights.map(w => w * usable / sumW);
-
     doc.setFillColor(...navy);
     doc.rect(m, y, usable, 7, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(255, 255, 255);
+    F('bold', 7.5); doc.setTextColor(255, 255, 255);
     let x = m;
-    headers.forEach((h, i) => {
-      doc.text(h, x + 1.2, y + 4.7);
-      x += colW[i];
-    });
+    headers.forEach((h, i) => { doc.text(h, x + 1.2, y + 4.7); x += colW[i]; });
     y += 7;
-
-    valid.forEach((r, idx) => {
-      const c = calcOf(r);
-      if (idx % 2 === 0) {
-        doc.setFillColor(248, 250, 252);
-        doc.rect(m, y, usable, tableRowH, 'F');
-      }
-      doc.setDrawColor(226, 232, 240);
-      doc.setLineWidth(0.12);
+    const tableRowH = valid.length <= 2 ? 8.5 : valid.length <= 4 ? 7.5 : 6.5;
+    const calcs = valid.map(r => ({ r, c: calcOf(r) }));
+    calcs.forEach(({ r, c }, idx) => {
+      if (idx % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(m, y, usable, tableRowH, 'F'); }
+      doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.12);
       doc.rect(m, y, usable, tableRowH);
       const vals = [
-        String(idx + 1),
-        (r.nozzleId || '—').slice(0, 16),
-        Number(r.capacity).toFixed(0) + ' L',
-        Number(r.indicated).toFixed(2),
-        Number(r.actual).toFixed(2),
-        (c.varianceL >= 0 ? '+' : '') + Number(c.varianceL).toFixed(2),
-        c.status
+        String(idx + 1), (r.nozzleId || '-').slice(0, 16), Number(r.capacity).toFixed(0) + ' L',
+        Number(r.indicated).toFixed(2), Number(r.actual).toFixed(2),
+        (c.varianceL >= 0 ? '+' : '') + Number(c.varianceL).toFixed(2), c.status
       ];
       x = m;
       vals.forEach((v, i) => {
-        if (i === 6) {
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8);
-          doc.setTextColor(...(c.pass ? green : red));
-        } else if (i === 5) {
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8);
-          doc.setTextColor(...(c.varianceL > 0.001 ? red : c.varianceL < -0.001 ? amber : dark));
-        } else {
-          doc.setFont('helvetica', i <= 1 ? 'bold' : 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(...dark);
-        }
+        if (i === 6) { F('bold', 8); doc.setTextColor(...(c.pass ? green : red)); }
+        else if (i === 5) { F('bold', 8); doc.setTextColor(...(c.varianceL > 0.001 ? red : c.varianceL < -0.001 ? amber : dark)); }
+        else { F(i <= 1 ? 'bold' : 'normal', 8); doc.setTextColor(...dark); }
         doc.text(String(v), x + 1.2, y + tableRowH * 0.68);
         x += colW[i];
       });
       y += tableRowH;
     });
-    y += 2.5;
+    y += 3;
 
-    // ===== 3. INTERPRETATION — fill space ABOVE sign-off =====
+    // Interpretation - size cards to fill space above sign-off WITHOUT leaving a large void:
+    // reserve sign block, distribute remaining height to cards, then place sign-off immediately after cards
     y = bar(y, '3.  READING INTERPRETATION & VERDICT');
-    y += 1.5;
-
-    // Sign-off is always reserved at the bottom of page 1
-    const signTop = bottomLimit - ZONE.sign - ZONE.signBar - 1;
-    const interpBottom = signTop - 2;
-    const interpAvail = Math.max(30, interpBottom - y);
-
-    const cols = 2;
-    const gap = 2.5;
+    y += 2;
+    const signBlockH = 34;
+    const cols = 2, gap = 2.5;
     const cardW = (usable - gap) / cols;
-    const rows = Math.ceil(n / cols);
-    const cardH = Math.min(40, (interpAvail - (rows - 1) * gap) / rows);
+    const nRows = Math.ceil(calcs.length / cols);
+    const avail = Math.max(32, bottomLimit - y - signBlockH - 2);
+    const cardH = Math.min(40, Math.max(26, (avail - (nRows - 1) * gap) / nRows));
 
-    valid.forEach((r, idx) => {
-      const c = calcOf(r);
-      const col = idx % cols;
-      const row = Math.floor(idx / cols);
+    calcs.forEach(({ r, c }, idx) => {
+      const col = idx % cols, row = Math.floor(idx / cols);
       const x0 = m + col * (cardW + gap);
       const y0 = y + row * (cardH + gap);
-      if (y0 + cardH > interpBottom + 0.5) return; // hard stop — never invade sign-off
-
       doc.setDrawColor(...(c.pass ? green : red));
       doc.setLineWidth(0.5);
       doc.setFillColor(255, 255, 255);
       doc.roundedRect(x0, y0, cardW, cardH, 1.2, 1.2, 'FD');
-
-      // chip
       doc.setFillColor(...(c.pass ? green : red));
       doc.roundedRect(x0 + cardW - 20, y0 + 2, 17, 5.5, 0.8, 0.8, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
-      doc.setTextColor(255, 255, 255);
+      F('bold', 7); doc.setTextColor(255, 255, 255);
       doc.text(c.status, x0 + cardW - 11.5, y0 + 5.7, { align: 'center' });
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(...navy);
+      F('bold', 8.5); doc.setTextColor(...navy);
       doc.text('#' + (idx + 1) + '  ' + (r.nozzleId || 'Nozzle'), x0 + 2.2, y0 + 5.5);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(...dark);
+      F('bold', 7.5); doc.setTextColor(...dark);
       doc.text(c.regType, x0 + 2.2, y0 + 11);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.2);
+      F('normal', 7.2);
       const varS = (c.varianceL >= 0 ? '+' : '') + Number(c.varianceL).toFixed(2) + ' L';
       const relS = (c.relVsInd >= 0 ? '+' : '') + Number(c.relVsInd).toFixed(2) + '%';
-      doc.text('Variance  ' + varS + '    ·    Rel. ind.  ' + relS, x0 + 2.2, y0 + 15.5);
-      doc.setFontSize(6.5);
-      doc.setTextColor(...grey);
+      doc.text('Variance  ' + varS + '    |    Rel. ind.  ' + relS, x0 + 2.2, y0 + 15.5);
+      F('normal', 6.5); doc.setTextColor(...grey);
       doc.text('Limit: ' + c.limitText, x0 + 2.2, y0 + 19.5);
-
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(6.8);
-      doc.setTextColor(...dark);
-      const narr = doc.splitTextToSize(c.narrative || '', cardW - 4.5);
-      doc.text(narr.slice(0, 2), x0 + 2.2, y0 + 24);
-
-      const county = countyForVerdict();
+      F('italic', 7); doc.setTextColor(...dark);
+      let ny = y0 + 23.5;
+      const narr = doc.splitTextToSize('Interpretation: ' + (c.narrative || ''), cardW - 4.5);
+      narr.slice(0, 2).forEach(ln => { doc.text(ln, x0 + 2.2, ny); ny += 3.2; });
+      const countyRaw = ($('#county-name').value || '').trim();
+      const countyBit = countyRaw ? countyForVerdict() : 'the County';
       const action = c.pass
-        ? 'Action: Fit for commercial use after authorisation & sealing by ' + county + ' W&M.'
-        : 'Action: Re-adjust, re-verify, then seal via ' + county + ' W&M before commercial use.';
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.5);
-      doc.setTextColor(...(c.pass ? green : red));
+        ? 'Action: Fit for commercial use after authorisation and sealing by ' + countyBit + ' Department of Weights and Measures.'
+        : 'Action: Re-adjust and re-verify, then seal via ' + countyBit + ' W&M before commercial use.';
+      F('bold', 6.8); doc.setTextColor(...(c.pass ? green : red));
       const al = doc.splitTextToSize(action, cardW - 4.5);
-      const maxA = Math.max(1, Math.floor((cardH - 28) / 3));
-      doc.text(al.slice(0, maxA), x0 + 2.2, y0 + Math.min(30, cardH - maxA * 3 - 2));
+      const maxA = Math.max(1, Math.floor((y0 + cardH - 2 - ny) / 3.1));
+      al.slice(0, maxA).forEach(ln => { doc.text(ln, x0 + 2.2, ny); ny += 3.1; });
     });
 
-    // ===== 4. SIGN-OFF (fixed near bottom) =====
-    y = signTop;
+    // Sign-off immediately after interpretation (no pinned void)
+    y += nRows * (cardH + gap) + 2;
+    if (y + signBlockH > bottomLimit) y = bottomLimit - signBlockH;
     y = bar(y, '4.  SIGN-OFF');
-    y += 2;
-
+    y += 5;
     const half = (usable - 3) / 2;
+    const boxH = 14;
     const testerSig = resolveSig('sig-tester', 'tester');
     const clientSig = resolveSig('sig-client', 'client');
-    const boxH = 16;
-
     function sigCol(x0, title, name, dateVal, sigData) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(...navy);
+      F('bold', 7.5); doc.setTextColor(...navy);
       doc.text(title, x0, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(...dark);
-      doc.text((name || '—').slice(0, 36), x0, y + 4.5);
-      doc.setFontSize(7);
-      doc.setTextColor(...grey);
+      F('normal', 8); doc.setTextColor(...dark);
+      doc.text((name || '-').slice(0, 36), x0, y + 4.5);
+      F('normal', 7); doc.setTextColor(...grey);
       doc.text('Date: ' + formatDateDDMonYYYY(dateVal), x0, y + 8.5);
-      doc.setDrawColor(148, 163, 184);
-      doc.setFillColor(255, 255, 255);
-      doc.setLineWidth(0.25);
+      doc.setDrawColor(148, 163, 184); doc.setFillColor(255, 255, 255); doc.setLineWidth(0.25);
       doc.roundedRect(x0, y + 10, half - 1, boxH, 1, 1, 'FD');
       if (sigData) {
         try { doc.addImage(sigData, 'JPEG', x0 + 1.5, y + 10.5, half - 4, boxH - 1); }
-        catch (_) {
-          try { doc.addImage(sigData, 'PNG', x0 + 1.5, y + 10.5, half - 4, boxH - 1); } catch (__) {}
-        }
+        catch (_) { try { doc.addImage(sigData, 'PNG', x0 + 1.5, y + 10.5, half - 4, boxH - 1); } catch (__) {} }
       }
     }
-
     sigCol(m, 'TESTER / TECHNICIAN', $('#tester-name').value, $('#tester-date').value, testerSig);
     sigCol(m + half + 3, 'CLIENT / SITE REPRESENTATIVE', $('#client-rep-name').value, $('#client-date').value, clientSig);
 
-    // ===== PHOTO PAGES =====
+    // Photo pages (page 2+)
     const photos = state.photos.slice();
     const photoPages = Math.min(2, Math.ceil(photos.length / 4));
     for (let pg = 0; pg < photoPages; pg++) {
       doc.addPage();
       drawFrame();
       let py = outer + 6;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(...navy);
+      F('bold', 12); doc.setTextColor(...navy);
       doc.text('CALIBRATION PHOTO EVIDENCE', pageW / 2, py, { align: 'center' });
       py += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(...grey);
-      doc.text(($('#doc-number').value || '') + '  ·  ' + ($('#client-name').value || ''), pageW / 2, py, { align: 'center' });
+      F('normal', 8); doc.setTextColor(...grey);
+      doc.text(($('#doc-number').value || '') + '  |  ' + ($('#client-name').value || ''), pageW / 2, py, { align: 'center' });
       py += 6;
-      const qGap = 3.5;
-      const qW = (usable - qGap) / 2;
-      const qH = (bottomLimit - py - qGap) / 2;
+      const qGap = 3.5, qW = (usable - qGap) / 2, qH = (bottomLimit - py - qGap) / 2;
       const batch = photos.slice(pg * 4, pg * 4 + 4);
       for (let i = 0; i < 4; i++) {
-        const col = i % 2;
-        const row = Math.floor(i / 2);
-        const qx = m + col * (qW + qGap);
-        const qy = py + row * (qH + qGap);
-        doc.setDrawColor(...navy);
-        doc.setLineWidth(0.3);
-        doc.setFillColor(255, 255, 255);
+        const col = i % 2, row = Math.floor(i / 2);
+        const qx = m + col * (qW + qGap), qy = py + row * (qH + qGap);
+        doc.setDrawColor(...navy); doc.setLineWidth(0.3); doc.setFillColor(255, 255, 255);
         doc.roundedRect(qx, qy, qW, qH, 1.2, 1.2, 'FD');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...navy);
+        F('bold', 7.5); doc.setTextColor(...navy);
         doc.text('Photo ' + (pg * 4 + i + 1), qx + 2.5, qy + 4.5);
         if (batch[i]) {
           const fitted = await fitPortraitDataUrl(batch[i].dataUrl, 900, 1100);
-          if (fitted) {
-            try { doc.addImage(fitted, 'JPEG', qx + 2.5, qy + 6, qW - 5, qH - 8.5); } catch (_) {}
-          }
+          if (fitted) { try { doc.addImage(fitted, 'JPEG', qx + 2.5, qy + 6, qW - 5, qH - 8.5); } catch (_) {} }
         }
       }
     }
 
     const total = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= total; i++) {
-      doc.setPage(i);
-      drawFrame();
-      drawFooter(i, total);
-    }
+    for (let i = 1; i <= total; i++) { doc.setPage(i); drawFrame(); drawFooter(i, total); }
 
     const safeClient = ($('#client-name').value || 'Client').replace(/[\\/:*?"<>|]/g, '-').slice(0, 30);
     const fileName = ($('#doc-number').value || 'CAL') + '_' + safeClient + '.pdf';
